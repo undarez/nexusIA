@@ -4,15 +4,14 @@ import { ChangeEvent, FormEvent, ReactNode, useEffect, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { openNexusBrowser } from '@/lib/desktop-windows';
 import { AgentTopology, type TopologySkill } from '@/components/agent-topology';
-import { nexusIntegrations } from '@/lib/integrations';
 import {
-  Activity, ArrowRight, BookOpen, Cable, Check, Circle, Clock3, Code2, ExternalLink, Folder,
+  Activity, ArrowRight, BookOpen, Check, Circle, Clock3, Code2, Folder,
   Globe2, HardDrive, LockKeyhole, Monitor, Plus, Rocket, Shield,
   Download, Pencil, Sparkles, TerminalSquare, Trash2, Upload, Users, Wifi,
 } from 'lucide-react';
 
-type WorkspacePage = 'missions' | 'new-mission' | 'projects' | 'agents' | 'terminal' | 'browser' | 'skills' | 'settings' | 'devices' | 'history' | 'security' | 'integrations';
-type Mission = { id: string; title: string; state: 'À faire' | 'En cours' | 'Terminée'; createdAt: string };
+type WorkspacePage = 'missions' | 'new-mission' | 'projects' | 'agents' | 'terminal' | 'browser' | 'skills' | 'settings' | 'devices' | 'history' | 'security';
+type Mission = { id: string; title: string; state: 'À faire' | 'En cours' | 'Terminée'; createdAt: string; request?: string; skillIds?: string[] };
 type Project = { id: string; name: string; note: string; createdAt: string };
 type CustomSkill = { id: string; name: string; group: string; desc: string; createdAt: string; updatedAt?: string; version?: number };
 type SkillLibraryItem = TopologySkill & { custom: boolean; createdAt?: string; updatedAt?: string; version?: number };
@@ -32,7 +31,6 @@ const titles: Record<WorkspacePage, { title: string; subtitle: string; icon: typ
   devices: { title: 'Appareils & Connexions', subtitle: 'État des connexions détectées par le prototype.', icon: Monitor },
   history: { title: 'Historique & Logs', subtitle: 'Événements de la session affichés dans le Terminal Studio.', icon: Clock3 },
   security: { title: 'Sécurité & Conformité', subtitle: 'Garde-fous actifs du terminal local.', icon: Shield },
-  integrations: { title: 'Connecteurs IA', subtitle: 'Services MCP prévus pour la recherche, les agents, la conformité et les données.', icon: Cable },
 };
 
 const agents = [
@@ -89,6 +87,9 @@ export function ModuleWorkspace({ page, terminalPanel, desktop, logs }: {
   const [projects, setProjects] = useLocalList<Project>('nexus.projects.v1');
   const [customSkills, setCustomSkills] = useLocalList<CustomSkill>('nexus.customSkills.v1');
   const [missionTitle, setMissionTitle] = useState('');
+  const [missionRequest, setMissionRequest] = useState('');
+  const [selectedMissionSkills, setSelectedMissionSkills] = useState<string[]>([]);
+  const [missionToLoad, setMissionToLoad] = useState('');
   const [projectName, setProjectName] = useState('');
   const [projectNote, setProjectNote] = useState('');
   const [browserAddress, setBrowserAddress] = useState('');
@@ -186,8 +187,10 @@ export function ModuleWorkspace({ page, terminalPanel, desktop, logs }: {
     event.preventDefault();
     const title = missionTitle.trim();
     if (!title) return;
-    setMissions((current) => [{ id: crypto.randomUUID(), title, state: 'À faire', createdAt: new Date().toLocaleString('fr-FR') }, ...current]);
+    setMissions((current) => [{ id: crypto.randomUUID(), title, state: 'À faire', createdAt: new Date().toLocaleString('fr-FR'), request: missionRequest.trim(), skillIds: selectedMissionSkills }, ...current]);
     setMissionTitle('');
+    setMissionRequest('');
+    setSelectedMissionSkills([]);
   }
 
   function createProject(event: FormEvent<HTMLFormElement>) {
@@ -430,6 +433,13 @@ export function ModuleWorkspace({ page, terminalPanel, desktop, logs }: {
     createMission(event);
   }
 
+  function loadMissionIntoAgents() {
+    const mission = missions.find((item) => item.id === missionToLoad);
+    if (!mission) return;
+    setAgentPrompt([mission.title, mission.request].filter(Boolean).join('\n\n'));
+    setSelectedAgentSkills((mission.skillIds || []).filter((id) => agentSkillOptions.some((skill) => skill.id === id)));
+  }
+
   function saveBookmark(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     void openBrowserTarget(browserAddress, true);
@@ -478,11 +488,11 @@ export function ModuleWorkspace({ page, terminalPanel, desktop, logs }: {
     {(page === 'missions' || page === 'new-mission') && <div className="module-content-grid">
       <section className="panel module-card mission-manager-card">
         <div className="module-card-heading"><div><h2>{page === 'new-mission' ? 'Préparer une mission' : 'Créer une mission'}</h2><p>Les données restent enregistrées dans ce profil local.</p></div><span className="module-count">{missions.length} mission{missions.length > 1 ? 's' : ''}</span></div>
-        <form className="module-form" onSubmit={addMissionFromQuickForm}><label htmlFor="mission-title">Nom de la mission</label><div className="module-form-row"><input id="mission-title" value={missionTitle} onChange={(event) => setMissionTitle(event.target.value)} placeholder="Ex. Préparer mon prochain projet" required maxLength={100} /><button className="module-primary-button"><Plus size={16} /> Créer</button></div></form>
+        <form className="module-form" onSubmit={addMissionFromQuickForm}><label htmlFor="mission-title">Nom de la mission</label><input id="mission-title" value={missionTitle} onChange={(event) => setMissionTitle(event.target.value)} placeholder="Ex. Préparer mon prochain projet" required maxLength={100} /><label htmlFor="mission-request">Demande à confier à l’équipe (facultatif)</label><textarea id="mission-request" value={missionRequest} onChange={(event) => setMissionRequest(event.target.value)} placeholder="Décris le résultat attendu et les contraintes…" /><label>Skills à joindre à la mission</label><div className="agent-check-grid">{agentSkillOptions.map((skill) => <label key={skill.id}><input type="checkbox" checked={selectedMissionSkills.includes(skill.id)} onChange={() => setSelectedMissionSkills((current) => current.includes(skill.id) ? current.filter((id) => id !== skill.id) : [...current, skill.id])} />{skill.name}</label>)}</div><div className="module-form-row"><button className="module-primary-button"><Plus size={16} /> Créer la mission</button></div></form>
       </section>
       <section className="panel module-card">
         <div className="module-card-heading"><div><h2>Tableau des missions</h2><p>Fais avancer chaque mission à ton rythme.</p></div><Rocket size={19} /></div>
-        {missions.length === 0 ? <div className="module-empty"><Circle size={22} /><strong>Aucune mission pour l’instant</strong><span>Crée une mission pour la voir apparaître ici.</span></div> : <div className="managed-list">{missions.map((mission) => <article className="managed-row" key={mission.id}><span className={`managed-state ${mission.state === 'Terminée' ? 'done' : mission.state === 'En cours' ? 'running' : ''}`}><Circle size={13} /></span><div><strong>{mission.title}</strong><small>{mission.createdAt} · {mission.state}</small></div><button className="subtle-button" onClick={() => setMissions((current) => current.map((item) => item.id !== mission.id ? item : { ...item, state: item.state === 'À faire' ? 'En cours' : item.state === 'En cours' ? 'Terminée' : 'À faire' }))}>{mission.state === 'À faire' ? 'Démarrer' : mission.state === 'En cours' ? 'Terminer' : 'Réouvrir'}</button><button className="danger-icon-button" aria-label={`Retirer ${mission.title}`} onClick={() => setMissions((current) => current.filter((item) => item.id !== mission.id))}><Trash2 size={14} /></button></article>)}</div>}
+        {missions.length === 0 ? <div className="module-empty"><Circle size={22} /><strong>Aucune mission pour l’instant</strong><span>Crée une mission pour la voir apparaître ici.</span></div> : <div className="managed-list">{missions.map((mission) => { const attachedSkills = (mission.skillIds || []).map((id) => agentSkillOptions.find((skill) => skill.id === id)?.name).filter((name): name is string => Boolean(name)); return <article className="managed-row" key={mission.id}><span className={`managed-state ${mission.state === 'Terminée' ? 'done' : mission.state === 'En cours' ? 'running' : ''}`}><Circle size={13} /></span><div><strong>{mission.title}</strong><small>{mission.createdAt} · {mission.state}</small>{mission.request && <p className="mission-request-preview">{mission.request}</p>}{attachedSkills.length > 0 && <small>Skills : {attachedSkills.join(' · ')}</small>}</div><button className="subtle-button" onClick={() => setMissions((current) => current.map((item) => item.id !== mission.id ? item : { ...item, state: item.state === 'À faire' ? 'En cours' : item.state === 'En cours' ? 'Terminée' : 'À faire' }))}>{mission.state === 'À faire' ? 'Démarrer' : mission.state === 'En cours' ? 'Terminer' : 'Réouvrir'}</button><button className="danger-icon-button" aria-label={`Retirer ${mission.title}`} onClick={() => setMissions((current) => current.filter((item) => item.id !== mission.id))}><Trash2 size={14} /></button></article>; })}</div>}
       </section>
     </div>}
 
@@ -510,6 +520,7 @@ export function ModuleWorkspace({ page, terminalPanel, desktop, logs }: {
       <section className="panel module-card"><div className="module-card-heading"><div><h2>Moteur OpenAI</h2><p>La clé se configure dans Configuration et reste chiffrée dans le profil Windows.</p></div><button className="module-primary-button" onClick={() => void loadOpenaiModels()} disabled={!desktop || !openaiKeyConfigured || openaiStatus === 'loading'}><Activity size={15} />{openaiStatus === 'loading' ? 'Vérification…' : openaiKeyConfigured ? 'Vérifier OpenAI' : 'Clé requise'}</button></div>{openaiStatus === 'ready' ? <div className="ollama-model-list">{openaiModels.map((model) => <span className="ollama-model-chip" key={model}>{model}</span>)}</div> : openaiStatus === 'error' ? <div className="module-info-note"><LockKeyhole size={15} /> OpenAI : {openaiError}</div> : <div className="module-info-note"><LockKeyhole size={15} />{openaiKeyConfigured ? 'Vérifie les modèles GPT disponibles pour ce compte API.' : 'Aucune clé enregistrée. Ajoute-la dans Configuration.'}</div>}</section>
       <section className="panel module-card"><div className="module-card-heading"><div><h2>Rôles de l’orchestrateur</h2><p>Choisis plusieurs rôles pour qu’ils se transmettent leurs réponses dans une même mission.</p></div><span className="module-count">{agents.length} rôles</span></div><div className="module-agent-grid">{agents.map(({ name, role, icon: AgentIcon, color }) => <article className="module-agent-card agent-model-card" key={name}><span className={`agent-icon ${color}`}><AgentIcon size={20} /></span><div className="agent-model-copy"><strong>{name}</strong><small>{role}</small><select aria-label={`Modèle Ollama pour ${name}`} value={agentModels[name] || ''} onChange={(event) => assignAgentModel(name, event.target.value)} disabled={ollamaModels.length === 0}><option value="">Aucun modèle associé</option>{ollamaModels.map((model) => <option key={model} value={model}>{model}</option>)}</select></div><span className={ollamaStatus === 'ready' ? 'skill-available' : 'not-connected'}><i /> {ollamaStatus === 'ready' ? 'OLLAMA' : ollamaStatus === 'loading' ? 'TEST…' : 'HORS LIGNE'}</span></article>)}</div></section>
       <section className="panel module-card"><div className="module-card-heading"><div><h2>Orchestrer une équipe</h2><p>Les agents se transmettent la réponse du précédent. Choisis un ou plusieurs rôles et skills.</p></div><Sparkles size={19} /></div><form className="module-form agent-run-form" onSubmit={(event) => void runSelectedAgent(event)}>
+        {missions.length > 0 && <div className="module-form-row mission-agent-loader"><select aria-label="Mission à charger" value={missionToLoad} onChange={(event) => setMissionToLoad(event.target.value)}><option value="">Charger une mission existante…</option>{missions.map((mission) => <option value={mission.id} key={mission.id}>{mission.title}</option>)}</select><button type="button" className="subtle-button" onClick={loadMissionIntoAgents} disabled={!missionToLoad}>Charger demande et skills</button></div>}
         <label htmlFor="agent-role">Agent de départ</label><select id="agent-role" value={selectedAgent} onChange={(event) => { setSelectedAgent(event.target.value); setSelectedAgentModel(''); setSelectedAgentTeam((current) => current.includes(event.target.value) ? current : [event.target.value, ...current]); }}>{agents.map((agent) => <option key={agent.name} value={agent.name}>{agent.name}</option>)}</select>
         <label>Équipe participante</label><div className="agent-check-grid">{agents.map((agent) => <label key={agent.name}><input type="checkbox" checked={selectedAgentTeam.includes(agent.name)} onChange={() => setSelectedAgentTeam((current) => current.includes(agent.name) ? current.filter((name) => name !== agent.name) : [...current, agent.name])} />{agent.name}</label>)}</div>
         <label htmlFor="agent-provider">Moteur IA</label><select id="agent-provider" value={agentProvider} onChange={(event) => { setAgentProvider(event.target.value as 'ollama' | 'hermes' | 'openai'); setSelectedAgentModel(''); }}><option value="ollama">Ollama · local</option><option value="hermes">Hermes · local</option><option value="openai">OpenAI · Internet</option></select>
@@ -536,23 +547,6 @@ export function ModuleWorkspace({ page, terminalPanel, desktop, logs }: {
     {page === 'settings' && <>
       <section className="panel module-card"><div className="module-card-heading"><div><h2>Connexion OpenAI</h2><p>La clé est chiffrée par Windows DPAPI dans le profil de cette session. NEXUS ne la réaffiche jamais.</p></div><LockKeyhole size={19} /></div><div className="connection-state-large"><span className={`connection-state-icon ${openaiKeyConfigured ? 'connected' : ''}`}><LockKeyhole size={21} /></span><div><strong>{openaiKeyConfigured ? 'Clé OpenAI enregistrée sur ce PC' : 'Clé OpenAI à configurer'}</strong><small>{openaiStatus === 'ready' ? `${openaiModels.length} modèle${openaiModels.length === 1 ? '' : 's'} GPT disponible${openaiModels.length === 1 ? '' : 's'}` : 'Elle sera utilisée uniquement quand tu sélectionnes OpenAI et envoies une demande à un agent.'}</small></div><button className="subtle-button" onClick={() => void loadOpenaiModels()} disabled={!desktop || !openaiKeyConfigured || openaiStatus === 'loading'}>Vérifier</button></div><form className="module-form openai-key-form" onSubmit={(event) => void saveOpenaiKey(event)}><label htmlFor="openai-api-key">Clé API OpenAI</label><div className="module-form-row"><input id="openai-api-key" type="password" value={openaiKeyDraft} onChange={(event) => setOpenaiKeyDraft(event.target.value)} placeholder="sk-…" autoComplete="new-password" spellCheck={false} maxLength={1024} disabled={!desktop || openaiStatus === 'loading'} /><button className="module-primary-button" disabled={!desktop || !openaiKeyDraft.trim() || openaiStatus === 'loading'}>Enregistrer chiffré</button></div><small className="module-form-hint">Ne colle pas cette clé dans le chat. La saisie est transmise à Rust pour être chiffrée par Windows, puis effacée du champ.</small></form>{openaiStatus === 'error' && <div className="module-info-note"><LockKeyhole size={15} /> Configuration OpenAI : {openaiError}</div>}</section>
       <section className="panel module-card settings-card"><div className="module-card-heading"><div><h2>Préférences d’affichage</h2><p>Ces préférences sont enregistrées localement sur cet appareil.</p></div><Activity size={19} /></div><label className="setting-row"><span><strong>Réduire les animations</strong><small>Désactive les effets de mouvement de l’interface.</small></span><input type="checkbox" checked={reducedMotion} onChange={(event) => setMotionPreference(event.target.checked)} /></label><div className="setting-row"><span><strong>Langue de l’interface</strong><small>Langue actuellement utilisée.</small></span><span className="setting-value">Français</span></div><div className="setting-row"><span><strong>Profil de stockage</strong><small>Les missions et fiches projet de cette version restent sur ce PC.</small></span><span className="setting-value">Local</span></div></section>
-    </>}
-
-    {page === 'integrations' && <>
-      <section className="panel module-card integrations-overview">
-        <div className="module-card-heading"><div><h2>Écosystème de connecteurs NEXUS</h2><p>Reguardian, Playwright, Notion, Encord, Perplexity, GitHub, Supabase, Firecrawl, Context7, Sentry et Sequential Thinking.</p></div><Cable size={19} /></div>
-        <div className="integration-policy"><Shield size={16} /><span><strong>Permissions limitées et vérifiables</strong><small>Ces fiches décrivent les intégrations visées. Aucun service n’est déclaré connecté à NEXUS tant que son adaptateur, son authentification et un test réel ne sont pas terminés.</small></span></div>
-      </section>
-      <section className="integration-grid" aria-label="Connecteurs externes prévus">
-        {nexusIntegrations.map((integration) => <article className="panel integration-card" key={integration.id}>
-          <div className="integration-card-top"><div><span className="integration-category">{integration.category}</span><h2>{integration.name}</h2></div><span className="integration-state"><i />{integration.status}</span></div>
-          <p>{integration.purpose}</p>
-          <div className="integration-meta"><span>Connexion</span><strong>{integration.mode}</strong></div>
-          <div className="integration-meta"><span>Prérequis</span><strong>{integration.auth}</strong></div>
-          <div className="integration-safety"><LockKeyhole size={14} /><span>{integration.safety}</span></div>
-          <a className="integration-doc-link" href={integration.docsUrl} target="_blank" rel="noreferrer">Documentation officielle <ExternalLink size={13} /></a>
-        </article>)}
-      </section>
     </>}
 
     {page === 'devices' && <>

@@ -2,7 +2,6 @@
 
 Prototype de bureau basé sur Next.js App Router (export statique), Tauri 2 et Rust.
 Le prototype inclut un pont PowerShell local à commandes limitées, avec approbation et audit. Supabase/MCP ne sont pas activés.
-La page `Connecteurs IA` inventorie les services MCP demandés et leurs portées de sécurité; elle ne prétend pas que ces connexions sont déjà actives. Voir [docs/INTEGRATIONS.md](docs/INTEGRATIONS.md).
 
 ## Prérequis Windows 11
 - Node.js LTS

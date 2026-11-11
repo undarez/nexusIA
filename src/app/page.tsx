@@ -7,7 +7,7 @@ import { CompanionWindow } from '@/components/companion-window';
 import { openNexusCompanion } from '@/lib/desktop-windows';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import {
-  Activity, ArrowUpRight, Cable, Check, ChevronDown, ChevronRight,
+  Activity, ArrowUpRight, Check, ChevronDown, ChevronRight,
   CircleCheck, Clock3, Code2, Command, Folder, Globe2, HardDrive,
   History, Home, LayoutDashboard, Layers, LockKeyhole, Monitor, PanelsTopLeft,
   Play, Plus, Rocket, Settings, Shield, Sparkles, TerminalSquare, Users,
@@ -68,7 +68,6 @@ const sideLinks = [
   { label: 'Appareils & Connexions', icon: Monitor },
   { label: 'Historique & Logs', icon: History },
   { label: 'Sécurité & Conformité', icon: Shield },
-  { label: 'Connecteurs IA', icon: Cable },
 ];
 
 const agentModules = [
@@ -84,19 +83,19 @@ const routeToLabel: Record<string, string> = {
   '/': 'Accueil', '/missions': 'Missions', '/missions/new': 'Nouvelle mission',
   '/agents': 'Agents', '/projects': 'Projets', '/terminal': 'Terminal',
   '/browser': 'Navigateur', '/skills': 'Skills', '/settings': 'Configuration',
-  '/devices': 'Appareils & Connexions', '/history': 'Historique & Logs', '/security': 'Sécurité & Conformité', '/integrations': 'Connecteurs IA',
+  '/devices': 'Appareils & Connexions', '/history': 'Historique & Logs', '/security': 'Sécurité & Conformité',
 };
 const routeForLabel: Record<string, string> = {
   Accueil: '/', 'Tableau de bord': '/', Missions: '/missions', 'Nouvelle mission': '/missions/new',
   Agents: '/agents', 'Agents IA': '/agents', Projets: '/projects', 'Mes projets': '/projects',
   Terminal: '/terminal', 'Terminal Studio': '/terminal', Navigateur: '/browser', 'Navigateur NEXUS': '/browser',
   Skills: '/skills', 'Skills (Compétences)': '/skills', Configuration: '/settings',
-  'Appareils & Connexions': '/devices', 'Historique & Logs': '/history', 'Sécurité & Conformité': '/security', 'Connecteurs IA': '/integrations',
+  'Appareils & Connexions': '/devices', 'Historique & Logs': '/history', 'Sécurité & Conformité': '/security',
 };
-const pageForPath: Record<string, 'missions' | 'new-mission' | 'projects' | 'agents' | 'terminal' | 'browser' | 'skills' | 'settings' | 'devices' | 'history' | 'security' | 'integrations'> = {
+const pageForPath: Record<string, 'missions' | 'new-mission' | 'projects' | 'agents' | 'terminal' | 'browser' | 'skills' | 'settings' | 'devices' | 'history' | 'security'> = {
   '/missions': 'missions', '/missions/new': 'new-mission', '/agents': 'agents', '/projects': 'projects',
   '/terminal': 'terminal', '/browser': 'browser', '/skills': 'skills', '/settings': 'settings',
-  '/devices': 'devices', '/history': 'history', '/security': 'security', '/integrations': 'integrations',
+  '/devices': 'devices', '/history': 'history', '/security': 'security',
 };
 
 const isTauri = () => typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
