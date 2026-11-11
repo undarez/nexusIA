@@ -381,6 +381,8 @@ export default function HomePage() {
         </div>
       </header>
 
+      {!desktop && pathname === '/' && <div className="web-beta-notice dashboard-web-beta" role="status"><strong>Bêta navigateur active</strong><span>Tu peux parcourir NEXUS et utiliser les fonctions locales de suivi. Le terminal Windows, les moteurs IA locaux et le compagnon bureau attendent le runtime Tauri, actuellement bloqué par la stratégie de sécurité Windows.</span></div>}
+
       {pathname === '/' ? <div className="dashboard-grid">
         <div className="main-column">
           <section className="welcome-banner">

@@ -4,6 +4,9 @@
 .online-pill.offline i { background: #8493a0; box-shadow: none; }
 .module-route-container { max-width: 1500px; padding-top: 14px; }
 .module-page { display: grid; align-content: start; gap: 14px; min-height: calc(100vh - 130px); }
+.web-beta-notice { display: grid; gap: 5px; padding: 11px 14px; border: 1px solid #70532b; border-radius: 9px; color: #e8d2a4; background: linear-gradient(110deg,#241b10,#17172a); font-size: 10px; line-height: 1.5; }
+.web-beta-notice strong { color: #ffd47e; font-size: 11px; }
+.dashboard-web-beta { margin: 12px 0 -3px; }
 .module-page-header { display: grid; gap: 12px; padding: 4px 2px 5px; }
 .module-breadcrumb { color: #6e8ca4; font-size: 8px; font-weight: 900; letter-spacing: .16em; }
 .module-breadcrumb span { padding: 0 7px; color: #46657a; }

@@ -5,6 +5,7 @@
   "packageManager": "pnpm@11.25.0",
   "scripts": {
     "dev": "next dev",
+    "dev:beta": "next dev --hostname 127.0.0.1",
     "build": "next build",
     "start": "next start",
     "tauri": "tauri"

@@ -16,6 +16,13 @@ pnpm install
 pnpm dev
 ```
 
+### Bêta utilisable sans le runtime Tauri
+Si Windows bloque `nexus-desktop.exe` avec la stratégie de contrôle d’application, lance l’interface web locale :
+```powershell
+pnpm dev:beta
+```
+Puis ouvre `http://127.0.0.1:3000`. Cette commande écoute uniquement sur le PC. Les missions, projets, skills et la navigation vers des sites dans le navigateur habituel sont disponibles; le Terminal Studio local, les moteurs IA locaux, les appareils et le compagnon flottant nécessitent le runtime Tauri. Le mode web n’exécute aucune commande Windows.
+
 ## Compilation frontend statique
 ```powershell
 pnpm build
@@ -46,7 +53,7 @@ Ce pont est un prototype local; il ne fournit pas de terminal interactif ni d'ac
 - Le workflow de signature fourni nécessite un PFX importable. Avant de créer un tag, confirme que l’émetteur autorise cette méthode; certains certificats récents nécessitent leur propre outil HSM/cloud et une configuration `signCommand` dédiée.
 - Pour un PFX pris en charge, configure les secrets `WINDOWS_CERTIFICATE` (PFX encodé en base64) et `WINDOWS_CERTIFICATE_PASSWORD`, puis la variable de dépôt `WINDOWS_TIMESTAMP_URL` fournie par l’autorité de certification.
 - Ne committe jamais de certificat `.pfx`, de mot de passe, de clé privée ou de fichier de signature local.
-- Le build de développement local `pnpm tauri dev` reste bloqué par Smart App Control tant que l’exécutable n’est pas signé avec un certificat reconnu. Le workflow de release ne peut signer qu’après la configuration du certificat.
+- Le build de développement local `pnpm tauri dev` peut être bloqué par la stratégie de contrôle d’application de Windows (notamment l’erreur 4551 / Code Integrity 3077). Ne désactive pas cette protection pour utiliser la bêta web; le certificat de production peut attendre.
 
 ## Important
 - Ne renseigne aucune clé secrète dans le frontend.

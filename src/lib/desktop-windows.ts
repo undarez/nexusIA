@@ -4,7 +4,12 @@ const isTauri = () => typeof window !== 'undefined' && '__TAURI_INTERNALS__' in 
 let companionOpening: Promise<void> | null = null;
 
 export async function openNexusBrowser(target: string) {
-  if (!isTauri()) throw new Error('Le navigateur intégré est disponible dans l’application Windows.');
+  if (!isTauri()) {
+    const opened = window.open(target, '_blank');
+    if (!opened) throw new Error('Le navigateur a bloqué la nouvelle fenêtre. Autorise les fenêtres contextuelles pour localhost, puis réessaie.');
+    opened.opener = null;
+    return;
+  }
   const previous = await WebviewWindow.getByLabel('nexus-browser');
   if (previous) await previous.close();
   const webview = new WebviewWindow('nexus-browser', {
