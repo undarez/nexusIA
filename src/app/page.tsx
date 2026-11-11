@@ -33,6 +33,7 @@ type TerminalAuditEvent = {
   timestampMs: number;
   detail?: string | null;
 };
+type TerminalSkill = { id: string; name: string; group?: string; desc: string };
 type EngineHealth = { ollama: 'checking' | 'connected' | 'offline'; hermes: 'checking' | 'connected' | 'offline'; openai: 'checking' | 'connected' | 'unconfigured' | 'offline' };
 type SystemMetrics = { cpuPercent: number; memoryPercent: number; memoryUsedBytes: number; memoryTotalBytes: number };
 
@@ -111,6 +112,10 @@ export default function HomePage() {
   const [selectedAction, setSelectedAction] = useState<TerminalAction>('getDate');
   const [selectedRuntime, setSelectedRuntime] = useState<TerminalRuntime>('PowerShell');
   const [typedCommand, setTypedCommand] = useState('');
+  const [terminalSkills, setTerminalSkills] = useState<TerminalSkill[]>([]);
+  const [terminalSkillIds, setTerminalSkillIds] = useState<string[]>([]);
+  const [terminalSkillRequest, setTerminalSkillRequest] = useState('');
+  const [terminalSkillNotice, setTerminalSkillNotice] = useState('');
   const [pendingApproval, setPendingApproval] = useState<TerminalAction | null>(null);
   const [running, setRunning] = useState(false);
   const [desktop, setDesktop] = useState(false);
@@ -140,6 +145,18 @@ export default function HomePage() {
     const timer = window.setInterval(updateClock, 30_000);
     return () => window.clearInterval(timer);
   }, []);
+
+  useEffect(() => {
+    if (pathname !== '/terminal') return;
+    try {
+      const storedSkills: unknown = JSON.parse(localStorage.getItem('nexus.customSkills.v1') || '[]');
+      const currentSkills = Array.isArray(storedSkills)
+        ? storedSkills.filter((skill): skill is TerminalSkill => Boolean(skill && typeof skill === 'object' && typeof skill.id === 'string' && typeof skill.name === 'string' && typeof skill.desc === 'string'))
+        : [];
+      setTerminalSkills(currentSkills);
+      setTerminalSkillIds((current) => current.filter((id) => currentSkills.some((skill) => skill.id === id)));
+    } catch { /* Skill transfer remains optional if local storage is unavailable. */ }
+  }, [pathname]);
 
   useEffect(() => {
     if (!desktop) {
@@ -303,6 +320,17 @@ export default function HomePage() {
     setTypedCommand('');
   }
 
+  function prepareTerminalSkillRequest() {
+    const chosenSkills = terminalSkills.filter((skill) => terminalSkillIds.includes(skill.id));
+    if (!chosenSkills.length || !terminalSkillRequest.trim()) return;
+    try {
+      localStorage.setItem('nexus.agent.draftFromTerminal.v1', JSON.stringify({ prompt: terminalSkillRequest.trim(), skillIds: chosenSkills.map((skill) => skill.id), createdAt: Date.now() }));
+      router.push('/agents');
+    } catch {
+      setTerminalSkillNotice('Impossible de transférer cette préparation. Vérifie le stockage local du navigateur.');
+    }
+  }
+
   const runtimeActions = actions.filter((action) => action.runtime === selectedRuntime);
   const terminalPanel = <section className="panel terminal-panel" id="terminal-studio">
     <div className="section-heading terminal-heading">
@@ -321,6 +349,13 @@ export default function HomePage() {
       <button className="run-action" disabled={!desktop || running}><Play size={15} fill="currentColor" />{running ? 'En cours…' : 'Exécuter'}</button>
     </form>
     {!desktop && <div className="web-terminal-note">Ouvre NEXUS dans son application Windows pour utiliser PowerShell.</div>}
+    <section className="terminal-skill-handoff" aria-labelledby="terminal-skill-title">
+      <div><strong id="terminal-skill-title">Préparer une demande avec des skills</strong><small>Les consignes seront transmises aux agents pour traitement. Elles ne sont jamais exécutées comme commandes terminal.</small></div>
+      {terminalSkills.length ? <div className="terminal-skill-list">{terminalSkills.map((skill) => <label key={skill.id}><input type="checkbox" checked={terminalSkillIds.includes(skill.id)} onChange={() => setTerminalSkillIds((current) => current.includes(skill.id) ? current.filter((id) => id !== skill.id) : [...current, skill.id])} /><span>{skill.name}<small>{skill.group || 'Personnel'}</small></span></label>)}</div> : <p className="terminal-skill-empty">Aucun skill personnel enregistré. Crée tes fiches dans Skills (Compétences).</p>}
+      <textarea aria-label="Demande à préparer pour les agents" value={terminalSkillRequest} onChange={(event) => { setTerminalSkillRequest(event.target.value); setTerminalSkillNotice(''); }} placeholder="Décris la demande à confier aux agents…" />
+      {terminalSkillNotice && <small role="status">{terminalSkillNotice}</small>}
+      <button type="button" className="terminal-skill-transfer" onClick={prepareTerminalSkillRequest} disabled={!terminalSkillIds.length || !terminalSkillRequest.trim()}>Préparer dans Agents</button>
+    </section>
     <div className="terminal-screen" role="log" aria-live="polite">
       <div className="terminal-screen-top"><span><i /><i /><i /></span><small>{selectedRuntime.toLocaleUpperCase('fr-FR')} · SESSION LOCALE</small><span className="screen-secure"><LockKeyhole size={11} /> SÉCURISÉ</span></div>
       <div className="terminal-output">

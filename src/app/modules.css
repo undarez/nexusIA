@@ -36,6 +36,22 @@
 .mission-agent-loader select { flex: 1; min-width: 0; border: 1px solid #25445c; border-radius: 8px; padding: 10px 11px; color: #e5f2fc; background: #07121f; font: inherit; font-size: 10px; }
 .mission-agent-loader .subtle-button { white-space: nowrap; }
 .module-form-row { display: flex; gap: 8px; }
+.terminal-skill-handoff { display: grid; gap: 9px; margin: 12px 0; padding: 12px; border: 1px solid #25445c; border-radius: 9px; background: #081725; }
+.terminal-skill-handoff > div:first-child strong, .terminal-skill-handoff > div:first-child small { display: block; }
+.terminal-skill-handoff > div:first-child strong { color: #d8f4ff; font-size: 11px; }
+.terminal-skill-handoff > div:first-child small, .terminal-skill-empty { color: #8da7bb; font-size: 9px; line-height: 1.5; }
+.terminal-skill-list { display: grid; grid-template-columns: repeat(auto-fit,minmax(180px,1fr)); gap: 6px; }
+.terminal-skill-list label { display: flex; align-items: flex-start; gap: 7px; padding: 8px; border: 1px solid #1d3b52; border-radius: 7px; color: #c5d6e4; background: #0b1d2d; font-size: 10px; }
+.terminal-skill-list input { margin: 2px 0 0; accent-color: #22cde8; }
+.terminal-skill-list span, .terminal-skill-list small { display: block; }
+.terminal-skill-list small { margin-top: 3px; color: #7894a9; font-size: 8px; }
+.terminal-skill-handoff textarea { min-height: 64px; resize: vertical; border: 1px solid #25445c; border-radius: 7px; padding: 9px; color: #e5f2fc; background: #07121f; font: inherit; font-size: 10px; }
+.terminal-skill-handoff textarea:focus { outline: 2px solid #27b8d7; outline-offset: 1px; }
+.terminal-skill-transfer { justify-self: end; border: 1px solid #197f9c; border-radius: 7px; padding: 8px 12px; color: #dffaff; background: #0b3a50; font: inherit; font-size: 10px; font-weight: 700; cursor: pointer; }
+.terminal-skill-transfer:disabled { opacity: .45; cursor: not-allowed; }
+.hermes-whatsapp-guide ol { display: grid; gap: 8px; margin: 0; padding-left: 22px; color: #b7cad9; font-size: 10px; line-height: 1.55; }
+.hermes-whatsapp-guide code { color: #74e7ff; }
+.hermes-whatsapp-guide > a { display: inline-flex; align-items: center; gap: 6px; color: #7de6fb; font-size: 10px; }
 .module-primary-button { display: flex; align-items: center; justify-content: center; gap: 7px; min-height: 36px; padding: 0 12px; border: 1px solid #187b9c; border-radius: 8px; color: #dffaff; background: linear-gradient(110deg, #0c4a67, #143464); font-size: 10px; font-weight: 800; white-space: nowrap; }
 .module-primary-button:hover { border-color: #58d9f2; box-shadow: 0 0 14px #11bde833; }
 .module-empty { display: grid; justify-items: center; gap: 9px; padding: 36px 12px; border: 1px dashed #26445a; border-radius: 10px; color: #72b8d3; background: #081523; text-align: center; }
