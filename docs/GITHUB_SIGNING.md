@@ -4,6 +4,8 @@
 
 Pour le statut open source actuel et les conditions de candidature, consulte [CODE_SIGNING_POLICY.md](CODE_SIGNING_POLICY.md). NEXUS n’a pas encore de compte/signature SignPath; le workflow PFX ci-dessous ne sera pas utilisé par une future intégration SignPath.
 
+La signature Ed25519 créée localement par le script Python sert à vérifier l’intégrité d’un message avec la paire de clés NEXUS Trust. Elle n’est pas une signature Authenticode, n’est pas approuvée par Smart App Control et ne remplace pas le certificat SignPath. Le fichier `security/identity/private.key` est une clé privée en clair encodée en Base64 : garde-la locale, ne la partage pas et ne la committe jamais. Elle ne sera pas incluse dans les artefacts de release.
+
 Le dépôt est privé. Le workflow de CI ne reçoit aucun secret; le workflow de signature ne se lance que lorsqu’un tag `v*` est poussé. Il suit la méthode PFX du guide fourni et fonctionne uniquement si le certificat choisi peut être fourni comme `.pfx` importable.
 
 ## À configurer après acquisition du certificat

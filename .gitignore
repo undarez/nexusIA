@@ -4,7 +4,6 @@ out
 dist
 target
 .env*
-!.env.example
 *.pfx
 *.p12
 *.key
@@ -12,3 +11,10 @@ certificate/
 relic.conf
 *.tsbuildinfo
 *.pem
+
+# NEXUS TRUST - Secrets
+security/identity/private.key
+security/identity/*.pem
+.env
+.env.*
+!.env.example

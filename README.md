@@ -49,6 +49,7 @@ Ce pont est un prototype local; il ne fournit pas de terminal interactif ni d'ac
 ## Signature Windows et préparation open source
 
 - `.github/workflows/ci.yml` vérifie les changements sur Windows.
+- `.github/workflows/beta-release.yml` publie un installateur bêta **non signé** pour les tags `beta-v*`; Windows Smart App Control peut le bloquer.
 - La candidature au programme gratuit SignPath Foundation est seulement envisagée; NEXUS n’est pas accepté et aucune version n’est signée par SignPath.
 - Les conditions SignPath incluent une licence OSI, un projet publiquement documenté et déjà publié dans le format à signer, une réputation vérifiable, une MFA sur GitHub/SignPath et l’approbation manuelle de chaque signature. L’acceptation n’est pas garantie.
 - `docs/CODE_SIGNING_POLICY.md` décrit l’état honnête de la signature et les rôles proposés; `docs/PRIVACY.md` décrit les flux de données.

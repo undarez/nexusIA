@@ -1,0 +1,46 @@
+name: Unsigned Windows beta
+
+on:
+  push:
+    tags:
+      - 'beta-v*'
+
+permissions:
+  contents: read
+
+jobs:
+  build-beta:
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up pnpm and Node.js
+        uses: pnpm/setup@v3
+        with:
+          version: 11.25.0
+          runtime: node@22
+          cache: true
+          install: false
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install JavaScript dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build unsigned Windows beta and publish prerelease
+        uses: tauri-apps/tauri-action@1deb371b0cd8bd54025b384f1cd735e725c4060f
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: NEXUS V4.2 Beta ${{ github.ref_name }}
+          releaseBody: |
+            **BÊTA NON SIGNÉE — INCOMPATIBLE AVEC SMART APP CONTROL EN MODE APPLICATION.**
+
+            Cette préversion sert à publier l’artefact bêta nécessaire à la candidature au programme de signature open source SignPath Foundation. Elle ne possède aucune signature Authenticode. Smart App Control peut bloquer l’installateur ou l’application. Ne considère pas ce fichier comme signé ou approuvé par Windows.
+          releaseDraft: false
+          prerelease: true
