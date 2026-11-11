@@ -10,12 +10,13 @@
 - Terminal Studio permet de préparer une demande avec plusieurs skills personnels et de la transmettre à Agents, sans exécuter leur contenu comme une commande.
 - Guide de jumelage WhatsApp Hermes ajouté à la page Agents; l’échange passe par la passerelle Hermes existante.
 - L’orchestration démarre des analyses spécialistes indépendantes par lots de deux, puis transmet leurs rapports à l’agent de départ pour une synthèse; l’état des agents actifs apparaît sur le graphe.
+- Hermes passe par son API native `/v1/runs`; NEXUS suit l’état, affiche la réponse finale, permet de demander l’arrêt et écrit des événements d’audit.
 - Connexions Ollama, Hermes et OpenAI exposées dans l’interface; clés OpenAI chiffrées via DPAPI.
 - Navigation HTTPS lancée dans une fenêtre WebView2 distincte.
 
 ## À faire, par priorité
 
-1. **Agents Hermes autonomes** — remplacer les requêtes API stateless actuelles par des exécutions Hermes dédiées, avec sous-agents natifs, événements en direct, annulation et mémoire explicitement contrôlée.
+1. **Agents Hermes autonomes** — terminé en partie : exécutions natives, consultation du statut et annulation sont intégrées. À poursuivre : flux SSE pour événements en direct, sous-agents Hermes natifs et mémoire explicitement contrôlée.
 2. **Navigateur utilisable par les agents** — synchroniser l’état de connexion entre tableau de bord et page navigateur; ajouter une recherche web pilotée par Hermes et des actions de page en opt-in, avec aperçu et confirmation avant toute saisie/clic.
 3. **Appareils du réseau local** — découverte et diagnostic LAN via la box, profils Samsung A52s 5G, TCL 65T8C / Android TV et Elegoo Centauri Carbon; définir des pilotes/API confirmés pour chaque action avant contrôle.
 4. **Terminal Studio** — ajouter des sessions interactives CMD/Python avec saisie, arrêt et audit; les maintenir distinctes de PowerShell et soumises à approbation.
@@ -25,7 +26,7 @@
 
 ## Limites connues
 
-- La première orchestration collaborative utilise des requêtes indépendantes au même modèle, puis une synthèse; elle ne lance pas encore de sous-processus Hermes natifs et ne peut pas encore annuler les requêtes en vol.
+- Les runs Hermes sont natifs et annulables; les équipes utilisent toujours des rôles indépendants puis une synthèse. Les événements SSE et sous-agents Hermes natifs ne sont pas encore affichés.
 - Une fiche de skill est locale et peut être jointe aux demandes d’agents. Créer un skill ne connecte pas automatiquement un outil Hermes.
 - La navigation WebView2 ouvre des pages; l’automatisation web par Hermes n’est pas encore intégrée.
 - Les commandes du Terminal Studio demeurent bornées et approuvées. L’interface CMD/Python n’est pas encore une session interactive.

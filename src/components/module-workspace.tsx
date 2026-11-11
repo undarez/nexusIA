@@ -1,6 +1,6 @@
 'use client';
 
-import { ChangeEvent, FormEvent, ReactNode, useEffect, useState } from 'react';
+import { ChangeEvent, FormEvent, ReactNode, useEffect, useRef, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { openNexusBrowser } from '@/lib/desktop-windows';
 import { AgentTopology, type TopologySkill } from '@/components/agent-topology';
@@ -16,6 +16,7 @@ type Project = { id: string; name: string; note: string; createdAt: string };
 type CustomSkill = { id: string; name: string; group: string; desc: string; createdAt: string; updatedAt?: string; version?: number };
 type SkillLibraryItem = TopologySkill & { custom: boolean; createdAt?: string; updatedAt?: string; version?: number };
 type AgentRunResult = { response: string; model: string; elapsedMs: number };
+type HermesRunSnapshot = { runId: string; status: string; output: string | null; error: string | null };
 type DeviceKey = 'printer' | 'phone' | 'tv';
 type DeviceCheckState = { status: 'idle' | 'checking' | 'reachable' | 'absent' | 'error'; message?: string };
 
@@ -129,6 +130,8 @@ export function ModuleWorkspace({ page, terminalPanel, desktop, logs }: {
   const [activeGraphAgents, setActiveGraphAgents] = useState<string[]>([]);
   const [completedGraphAgents, setCompletedGraphAgents] = useState<string[]>([]);
   const [failedGraphAgent, setFailedGraphAgent] = useState<string | null>(null);
+  const activeHermesRuns = useRef<Set<string>>(new Set());
+  const cancelHermesTeam = useRef(false);
   const [deviceIps, setDeviceIps] = useState<Record<DeviceKey, string>>({ printer: defaultPrinterIp, phone: '', tv: '' });
   const [deviceChecks, setDeviceChecks] = useState<Record<DeviceKey, DeviceCheckState>>({
     printer: { status: 'idle' }, phone: { status: 'idle' }, tv: { status: 'idle' },
@@ -419,23 +422,54 @@ export function ModuleWorkspace({ page, terminalPanel, desktop, logs }: {
     setActiveGraphAgents([]);
     setCompletedGraphAgents([]);
     setFailedGraphAgent(null);
+    cancelHermesTeam.current = false;
+    activeHermesRuns.current.clear();
     let executingRole = selectedAgent;
     let failedRole: string | null = null;
     try {
-      const command = agentProvider === 'ollama' ? 'run_ollama_agent' : agentProvider === 'hermes' ? 'run_hermes_agent' : 'run_openai_agent';
-      const runRole = (role: string, prompt: string, coordinator: boolean) => invoke<AgentRunResult>(command, {
-        input: {
+      const runRole = async (role: string, prompt: string, coordinator: boolean): Promise<AgentRunResult> => {
+        const input = {
           model,
           role,
           prompt,
           skillName: skills.map((skill) => skill.name).join(', ') || null,
           skillInstructions: skillInstructions || null,
           enableHermesTools: agentProvider === 'hermes' && coordinator && allowHermesTools && hermesEnabledToolsets.length > 0,
-        },
-      });
+        };
+        if (agentProvider !== 'hermes') {
+          const command = agentProvider === 'ollama' ? 'run_ollama_agent' : 'run_openai_agent';
+          return invoke<AgentRunResult>(command, { input });
+        }
+        const runId = await invoke<string>('start_hermes_run', { input });
+        activeHermesRuns.current.add(runId);
+        const startedAt = Date.now();
+        let stopRequested = false;
+        try {
+          while (Date.now() - startedAt < 180_000) {
+            const snapshot = await invoke<HermesRunSnapshot>('get_hermes_run', { runId });
+            if (snapshot.status === 'completed') {
+              if (!snapshot.output) throw new Error('Hermes a terminé sans réponse textuelle.');
+              return { response: snapshot.output, model, elapsedMs: Date.now() - startedAt };
+            }
+            if (['failed', 'cancelled', 'interrupted'].includes(snapshot.status)) {
+              throw new Error(snapshot.error || `Run Hermes ${snapshot.status}.`);
+            }
+            if (cancelHermesTeam.current && !stopRequested) {
+              stopRequested = true;
+              await invoke('stop_hermes_run', { runId });
+            }
+            await new Promise((resolve) => window.setTimeout(resolve, 900));
+          }
+          await invoke('stop_hermes_run', { runId });
+          throw new Error('Délai de 3 minutes atteint; NEXUS a demandé l’arrêt du run Hermes.');
+        } finally {
+          activeHermesRuns.current.delete(runId);
+        }
+      };
       const specialists = team.filter((role) => role !== selectedAgent);
       const contributions: Array<{ role: string; response: string }> = [];
       for (let offset = 0; offset < specialists.length; offset += 2) {
+        if (cancelHermesTeam.current) throw new Error('Mission Hermes annulée.');
         const batch = specialists.slice(offset, offset + 2);
         setActiveGraphAgents(batch);
         const results = await Promise.all(batch.map(async (role) => {
@@ -452,6 +486,7 @@ export function ModuleWorkspace({ page, terminalPanel, desktop, logs }: {
       }
 
       if (contributions.length) {
+        if (cancelHermesTeam.current) throw new Error('Mission Hermes annulée.');
         executingRole = selectedAgent;
         setActiveGraphAgents([selectedAgent]);
         const contributionBrief = contributions.map(({ role, response }) => `### Contribution de ${role}\n${response}`).join('\n\n');
@@ -472,7 +507,14 @@ export function ModuleWorkspace({ page, terminalPanel, desktop, logs }: {
       setActiveGraphAgents([]);
       setAgentRunError(String(error));
       setAgentRunState('error');
+    } finally {
+      activeHermesRuns.current.clear();
     }
+  }
+
+  async function cancelHermesAgentRun() {
+    cancelHermesTeam.current = true;
+    await Promise.all([...activeHermesRuns.current].map((runId) => invoke('stop_hermes_run', { runId }).catch(() => undefined)));
   }
 
   function addMissionFromQuickForm(event: FormEvent<HTMLFormElement>) {
@@ -578,9 +620,9 @@ export function ModuleWorkspace({ page, terminalPanel, desktop, logs }: {
         {agentProvider === 'hermes' && hermesEnabledToolsets.length > 0 && (hermesMultiAgentToolsConflict
           ? <div className="module-info-note"><LockKeyhole size={15} />Les outils Hermes actifs sont disponibles pour chaque appel API. Désactive-les dans Hermes pour lancer une équipe en mode analyse, ou réduis l’équipe à un seul agent.</div>
           : <label className="agent-tools-approval"><input type="checkbox" checked={allowHermesTools} onChange={(event) => setAllowHermesTools(event.target.checked)} />Autoriser les toolsets Hermes pour cette demande : {hermesEnabledToolsets.join(', ')}</label>)}
-        <button className="module-primary-button" disabled={!desktop || !agentEffectiveModel || agentRunState === 'running' || hermesMultiAgentToolsConflict || (agentProvider === 'hermes' && hermesEnabledToolsets.length > 0 && !allowHermesTools)}><Sparkles size={15} />{agentRunState === 'running' ? 'Les agents échangent…' : `Lancer ${Math.max(1, activeAgentTeam.length)} agent${activeAgentTeam.length === 1 ? '' : 's'}`}</button>
+        <div className="agent-form-actions"><button className="module-primary-button" disabled={!desktop || !agentEffectiveModel || agentRunState === 'running' || hermesMultiAgentToolsConflict || (agentProvider === 'hermes' && hermesEnabledToolsets.length > 0 && !allowHermesTools)}><Sparkles size={15} />{agentRunState === 'running' ? 'Les agents échangent…' : `Lancer ${Math.max(1, activeAgentTeam.length)} agent${activeAgentTeam.length === 1 ? '' : 's'}`}</button>{agentProvider === 'hermes' && agentRunState === 'running' && <button type="button" className="subtle-button" onClick={() => void cancelHermesAgentRun()}>Arrêter la mission</button>}</div>
       </form>{agentRunState === 'error' && <div className="module-info-note"><LockKeyhole size={15} /> L’équipe n’a pas pu répondre : {agentRunError}</div>}{agentResponse && <pre className="agent-response">{agentResponse}</pre>}</section>
-      <section className="panel module-card"><div className="module-info-note"><LockKeyhole size={15} /> Hermes est le moteur proposé par défaut. Les spécialistes reçoivent la même demande séparément, puis l’agent de départ reçoit leurs rapports pour les comparer et les synthétiser. Cela ne lance pas encore des sous-processus Hermes autonomes. L’API ne sépare pas les outils par rôle : NEXUS bloque donc le multi-agent si un toolset API est actif.</div></section>
+      <section className="panel module-card"><div className="module-info-note"><LockKeyhole size={15} /> Hermes utilise maintenant l’API native des runs : NEXUS suit le statut et peut demander l’annulation. Les spécialistes collaborent toujours par lots de deux avant la synthèse. Les événements SSE et la visibilité des sous-agents natifs restent à connecter. Les toolsets API sont contrôlés au niveau global; NEXUS bloque donc le multi-agent s’ils sont actifs.</div></section>
     </>}
 
     {page === 'browser' && <div className="module-content-grid">

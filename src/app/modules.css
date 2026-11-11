@@ -24,6 +24,7 @@
 .module-card-heading p { margin: 5px 0 0; color: #8099ad; font-size: 10px; line-height: 1.5; }
 .module-count { margin-left: auto; padding: 5px 8px; border: 1px solid #28536d; border-radius: 99px; color: #a0dcf3; background: #10283a; font-size: 8px; font-weight: 800; white-space: nowrap; }
 .module-form { display: grid; gap: 8px; }
+.agent-form-actions { display: flex; gap: 10px; flex-wrap: wrap; }
 .module-form label { color: #a9c0d2; font-size: 9px; font-weight: 700; }
 .module-form input, .module-form textarea, .module-search input { min-width: 0; width: 100%; border: 1px solid #25445c; border-radius: 8px; padding: 10px 11px; color: #e5f2fc; background: #07121f; font: inherit; font-size: 10px; }
 .module-form input:focus, .module-form textarea:focus, .module-search input:focus { outline: 2px solid #27b8d7; outline-offset: 1px; }

@@ -1097,7 +1097,11 @@ fn hermes_api_request(
         .position(|bytes| bytes == b"\r\n\r\n")
         .ok_or_else(|| "Réponse HTTP Hermes invalide.".to_owned())?;
     let headers = String::from_utf8_lossy(&response[..header_end]);
-    if !headers.starts_with("HTTP/1.1 200") && !headers.starts_with("HTTP/1.0 200") {
+    if !headers.starts_with("HTTP/1.1 200")
+        && !headers.starts_with("HTTP/1.0 200")
+        && !headers.starts_with("HTTP/1.1 202")
+        && !headers.starts_with("HTTP/1.0 202")
+    {
         return Err(
             "Hermes a refusé la requête. Vérifie son état et sa clé API locale.".to_owned(),
         );
@@ -1229,6 +1233,158 @@ async fn run_hermes_agent(
             Err(error)
         }
     }
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct HermesRunCreateResponse {
+    run_id: String,
+    status: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct HermesRunSnapshot {
+    run_id: String,
+    status: String,
+    output: Option<String>,
+    error: Option<String>,
+}
+
+fn validate_hermes_run_id(run_id: &str) -> Result<(), String> {
+    if run_id.len() < 8
+        || run_id.len() > 128
+        || !run_id.starts_with("run_")
+        || !run_id
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_' || byte == b'-')
+    {
+        return Err("Identifiant de run Hermes invalide.".to_owned());
+    }
+    Ok(())
+}
+
+#[tauri::command]
+async fn start_hermes_run(app: AppHandle, input: OllamaAgentInput) -> Result<String, String> {
+    let _guard = AgentSlotGuard::acquire(&HERMES_AGENT_ACTIVE, "Hermes")?;
+    let active_toolsets = read_hermes_enabled_toolsets()?;
+    if !active_toolsets.is_empty() && !input.enable_hermes_tools {
+        return Err(format!("Hermes dispose de toolsets API actifs ({}). Autorise explicitement leur usage pour cette demande dans NEXUS, ou désactive-les côté API Server.", active_toolsets.join(", ")));
+    }
+    let role_instruction =
+        ollama_agent_role(&input.role).ok_or_else(|| "Rôle d’agent non autorisé.".to_owned())?;
+    let model = input.model.trim();
+    if model.is_empty() || model.len() > 128 || model.chars().any(char::is_control) {
+        return Err("Identifiant de modèle Hermes invalide.".to_owned());
+    }
+    validate_agent_prompt(&input.prompt)?;
+    let skill_name = input.skill_name.unwrap_or_default();
+    let skill_instructions = input.skill_instructions.unwrap_or_default();
+    let mut instructions = format!(
+        "Tu es l’agent NEXUS « {} ». {} Réponds en français. {}",
+        input.role,
+        role_instruction,
+        if input.enable_hermes_tools {
+            "Les outils Hermes sont disponibles pour cette demande explicitement autorisée. Utilise-les uniquement pour accomplir la demande et explique les actions réalisées."
+        } else {
+            "Aucun outil externe n’est autorisé pour cette demande. Ne prétends pas avoir effectué une action réelle."
+        }
+    );
+    if !skill_instructions.trim().is_empty() {
+        instructions.push_str("\n\nSkill sélectionné — consignes fournies par l’utilisateur :\n");
+        instructions.push_str(skill_name.trim());
+        instructions.push('\n');
+        instructions.push_str(skill_instructions.trim());
+    }
+    let session_id = next_event_id();
+    let request = serde_json::to_vec(&serde_json::json!({
+        "model": model,
+        "input": input.prompt.trim(),
+        "instructions": instructions,
+        "session_id": session_id,
+    }))
+    .map_err(|error| format!("Préparation du run Hermes impossible: {error}"))?;
+    let event_id = next_event_id();
+    let metadata = Some(format!("role={}; model={}; mode=run", input.role, model));
+    audit(&app, &event_id, "Hermes Run", "started", metadata.clone());
+    let response = tauri::async_runtime::spawn_blocking(move || {
+        hermes_api_request(
+            "POST",
+            "/v1/runs",
+            Some(&request),
+            Duration::from_secs(10),
+        )
+    })
+    .await
+    .map_err(|error| format!("Création du run Hermes interrompue: {error}"))??;
+    let created: HermesRunCreateResponse = serde_json::from_slice(&response)
+        .map_err(|error| format!("Réponse de création Hermes invalide: {error}"))?;
+    validate_hermes_run_id(&created.run_id)?;
+    audit(
+        &app,
+        &event_id,
+        "Hermes Run",
+        "accepted",
+        Some(format!("run_id={}; status={}", created.run_id, created.status)),
+    );
+    Ok(created.run_id)
+}
+
+#[tauri::command]
+async fn get_hermes_run(app: AppHandle, run_id: String) -> Result<HermesRunSnapshot, String> {
+    validate_hermes_run_id(&run_id)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let path = format!("/v1/runs/{run_id}");
+        let response = hermes_api_request("GET", &path, None, Duration::from_secs(5))?;
+        let json: serde_json::Value = serde_json::from_slice(&response)
+            .map_err(|error| format!("État du run Hermes invalide: {error}"))?;
+        let status = json
+            .get("status")
+            .and_then(serde_json::Value::as_str)
+            .filter(|value| value.len() <= 64)
+            .ok_or_else(|| "L’état Hermes ne contient pas de statut valide.".to_owned())?
+            .to_owned();
+        let output = json
+            .get("output")
+            .and_then(serde_json::Value::as_str)
+            .filter(|value| value.len() <= 64 * 1024)
+            .map(str::to_owned);
+        let error = json
+            .get("error")
+            .and_then(serde_json::Value::as_str)
+            .filter(|value| value.len() <= 4096)
+            .map(str::to_owned);
+        if ["completed", "failed", "cancelled", "interrupted"].contains(&status.as_str()) {
+            let event_id = next_event_id();
+            audit(
+                &app,
+                &event_id,
+                "Hermes Run",
+                match status.as_str() {
+                    "completed" => "completed",
+                    "cancelled" => "cancelled",
+                    _ => "failed",
+                },
+                Some(format!("run_id={run_id}; status={status}")),
+            );
+        }
+        Ok(HermesRunSnapshot { run_id, status, output, error })
+    })
+    .await
+    .map_err(|error| format!("Lecture du run Hermes interrompue: {error}"))?
+}
+
+#[tauri::command]
+async fn stop_hermes_run(app: AppHandle, run_id: String) -> Result<(), String> {
+    validate_hermes_run_id(&run_id)?;
+    let path = format!("/v1/runs/{run_id}/stop");
+    let event_id = next_event_id();
+    audit(&app, &event_id, "Hermes Run", "stop_requested", Some(format!("run_id={run_id}")));
+    tauri::async_runtime::spawn_blocking(move || {
+        hermes_api_request("POST", &path, Some(b"{}"), Duration::from_secs(5)).map(|_| ())
+    })
+    .await
+    .map_err(|error| format!("Arrêt du run Hermes interrompu: {error}"))?
 }
 
 fn read_hermes_models() -> Result<Vec<String>, String> {
@@ -1668,6 +1824,9 @@ fn main() {
             list_hermes_models,
             hermes_text_only_status,
             run_hermes_agent,
+            start_hermes_run,
+            get_hermes_run,
+            stop_hermes_run,
             run_ollama_agent,
             list_openai_models,
             run_openai_agent,
