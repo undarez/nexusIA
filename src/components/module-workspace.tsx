@@ -4,13 +4,14 @@ import { ChangeEvent, FormEvent, ReactNode, useEffect, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { openNexusBrowser } from '@/lib/desktop-windows';
 import { AgentTopology, type TopologySkill } from '@/components/agent-topology';
+import { nexusIntegrations } from '@/lib/integrations';
 import {
-  Activity, ArrowRight, BookOpen, Check, Circle, Clock3, Code2, Folder,
+  Activity, ArrowRight, BookOpen, Cable, Check, Circle, Clock3, Code2, ExternalLink, Folder,
   Globe2, HardDrive, LockKeyhole, Monitor, Plus, Rocket, Shield,
   Download, Pencil, Sparkles, TerminalSquare, Trash2, Upload, Users, Wifi,
 } from 'lucide-react';
 
-type WorkspacePage = 'missions' | 'new-mission' | 'projects' | 'agents' | 'terminal' | 'browser' | 'skills' | 'settings' | 'devices' | 'history' | 'security';
+type WorkspacePage = 'missions' | 'new-mission' | 'projects' | 'agents' | 'terminal' | 'browser' | 'skills' | 'settings' | 'devices' | 'history' | 'security' | 'integrations';
 type Mission = { id: string; title: string; state: 'À faire' | 'En cours' | 'Terminée'; createdAt: string };
 type Project = { id: string; name: string; note: string; createdAt: string };
 type CustomSkill = { id: string; name: string; group: string; desc: string; createdAt: string; updatedAt?: string; version?: number };
@@ -31,6 +32,7 @@ const titles: Record<WorkspacePage, { title: string; subtitle: string; icon: typ
   devices: { title: 'Appareils & Connexions', subtitle: 'État des connexions détectées par le prototype.', icon: Monitor },
   history: { title: 'Historique & Logs', subtitle: 'Événements de la session affichés dans le Terminal Studio.', icon: Clock3 },
   security: { title: 'Sécurité & Conformité', subtitle: 'Garde-fous actifs du terminal local.', icon: Shield },
+  integrations: { title: 'Connecteurs IA', subtitle: 'Services MCP prévus pour la recherche, les agents, la conformité et les données.', icon: Cable },
 };
 
 const agents = [
@@ -534,6 +536,23 @@ export function ModuleWorkspace({ page, terminalPanel, desktop, logs }: {
     {page === 'settings' && <>
       <section className="panel module-card"><div className="module-card-heading"><div><h2>Connexion OpenAI</h2><p>La clé est chiffrée par Windows DPAPI dans le profil de cette session. NEXUS ne la réaffiche jamais.</p></div><LockKeyhole size={19} /></div><div className="connection-state-large"><span className={`connection-state-icon ${openaiKeyConfigured ? 'connected' : ''}`}><LockKeyhole size={21} /></span><div><strong>{openaiKeyConfigured ? 'Clé OpenAI enregistrée sur ce PC' : 'Clé OpenAI à configurer'}</strong><small>{openaiStatus === 'ready' ? `${openaiModels.length} modèle${openaiModels.length === 1 ? '' : 's'} GPT disponible${openaiModels.length === 1 ? '' : 's'}` : 'Elle sera utilisée uniquement quand tu sélectionnes OpenAI et envoies une demande à un agent.'}</small></div><button className="subtle-button" onClick={() => void loadOpenaiModels()} disabled={!desktop || !openaiKeyConfigured || openaiStatus === 'loading'}>Vérifier</button></div><form className="module-form openai-key-form" onSubmit={(event) => void saveOpenaiKey(event)}><label htmlFor="openai-api-key">Clé API OpenAI</label><div className="module-form-row"><input id="openai-api-key" type="password" value={openaiKeyDraft} onChange={(event) => setOpenaiKeyDraft(event.target.value)} placeholder="sk-…" autoComplete="new-password" spellCheck={false} maxLength={1024} disabled={!desktop || openaiStatus === 'loading'} /><button className="module-primary-button" disabled={!desktop || !openaiKeyDraft.trim() || openaiStatus === 'loading'}>Enregistrer chiffré</button></div><small className="module-form-hint">Ne colle pas cette clé dans le chat. La saisie est transmise à Rust pour être chiffrée par Windows, puis effacée du champ.</small></form>{openaiStatus === 'error' && <div className="module-info-note"><LockKeyhole size={15} /> Configuration OpenAI : {openaiError}</div>}</section>
       <section className="panel module-card settings-card"><div className="module-card-heading"><div><h2>Préférences d’affichage</h2><p>Ces préférences sont enregistrées localement sur cet appareil.</p></div><Activity size={19} /></div><label className="setting-row"><span><strong>Réduire les animations</strong><small>Désactive les effets de mouvement de l’interface.</small></span><input type="checkbox" checked={reducedMotion} onChange={(event) => setMotionPreference(event.target.checked)} /></label><div className="setting-row"><span><strong>Langue de l’interface</strong><small>Langue actuellement utilisée.</small></span><span className="setting-value">Français</span></div><div className="setting-row"><span><strong>Profil de stockage</strong><small>Les missions et fiches projet de cette version restent sur ce PC.</small></span><span className="setting-value">Local</span></div></section>
+    </>}
+
+    {page === 'integrations' && <>
+      <section className="panel module-card integrations-overview">
+        <div className="module-card-heading"><div><h2>Écosystème de connecteurs NEXUS</h2><p>Reguardian, Playwright, Notion, Encord, Perplexity, GitHub, Supabase, Firecrawl, Context7, Sentry et Sequential Thinking.</p></div><Cable size={19} /></div>
+        <div className="integration-policy"><Shield size={16} /><span><strong>Permissions limitées et vérifiables</strong><small>Ces fiches décrivent les intégrations visées. Aucun service n’est déclaré connecté à NEXUS tant que son adaptateur, son authentification et un test réel ne sont pas terminés.</small></span></div>
+      </section>
+      <section className="integration-grid" aria-label="Connecteurs externes prévus">
+        {nexusIntegrations.map((integration) => <article className="panel integration-card" key={integration.id}>
+          <div className="integration-card-top"><div><span className="integration-category">{integration.category}</span><h2>{integration.name}</h2></div><span className="integration-state"><i />{integration.status}</span></div>
+          <p>{integration.purpose}</p>
+          <div className="integration-meta"><span>Connexion</span><strong>{integration.mode}</strong></div>
+          <div className="integration-meta"><span>Prérequis</span><strong>{integration.auth}</strong></div>
+          <div className="integration-safety"><LockKeyhole size={14} /><span>{integration.safety}</span></div>
+          <a className="integration-doc-link" href={integration.docsUrl} target="_blank" rel="noreferrer">Documentation officielle <ExternalLink size={13} /></a>
+        </article>)}
+      </section>
     </>}
 
     {page === 'devices' && <>
