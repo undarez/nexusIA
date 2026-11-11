@@ -1,5 +1,9 @@
 # Signature Windows via GitHub Actions
 
+> Ce document décrit uniquement la méthode PFX d’une CA. Elle n’est pas encore configurée et n’est pas la voie SignPath gratuite.
+
+Pour le statut open source actuel et les conditions de candidature, consulte [CODE_SIGNING_POLICY.md](CODE_SIGNING_POLICY.md). NEXUS n’a pas encore de compte/signature SignPath; le workflow PFX ci-dessous ne sera pas utilisé par une future intégration SignPath.
+
 Le dépôt est privé. Le workflow de CI ne reçoit aucun secret; le workflow de signature ne se lance que lorsqu’un tag `v*` est poussé. Il suit la méthode PFX du guide fourni et fonctionne uniquement si le certificat choisi peut être fourni comme `.pfx` importable.
 
 ## À configurer après acquisition du certificat
