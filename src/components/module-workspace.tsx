@@ -126,7 +126,7 @@ export function ModuleWorkspace({ page, terminalPanel, desktop, logs }: {
   const [agentResponse, setAgentResponse] = useState('');
   const [agentRunState, setAgentRunState] = useState<'idle' | 'running' | 'error'>('idle');
   const [agentRunError, setAgentRunError] = useState('');
-  const [activeGraphAgent, setActiveGraphAgent] = useState<string | null>(null);
+  const [activeGraphAgents, setActiveGraphAgents] = useState<string[]>([]);
   const [completedGraphAgents, setCompletedGraphAgents] = useState<string[]>([]);
   const [failedGraphAgent, setFailedGraphAgent] = useState<string | null>(null);
   const [deviceIps, setDeviceIps] = useState<Record<DeviceKey, string>>({ printer: defaultPrinterIp, phone: '', tv: '' });
@@ -136,6 +136,10 @@ export function ModuleWorkspace({ page, terminalPanel, desktop, logs }: {
   const agentAvailableModels = agentProvider === 'ollama' ? ollamaModels : agentProvider === 'hermes' ? hermesModels : openaiModels;
   const agentEffectiveModel = selectedAgentModel || (agentProvider === 'ollama' ? agentModels[selectedAgent] : '') || agentAvailableModels[0] || '';
   const agentSkillOptions: TopologySkill[] = [...builtInAgentSkills, ...customSkills];
+  const activeAgentTeam = selectedAgentTeam.length ? selectedAgentTeam : [selectedAgent];
+  const hermesMultiAgentToolsConflict = agentProvider === 'hermes'
+    && hermesEnabledToolsets.length > 0
+    && activeAgentTeam.some((role) => role !== selectedAgent);
   const skillLibraryItems: SkillLibraryItem[] = [
     ...[
       { name: 'Actions PowerShell limitées', group: 'Terminal Studio', desc: 'Date/heure, résumé de processus et dossier courant ; approbation obligatoire.' },
@@ -396,48 +400,76 @@ export function ModuleWorkspace({ page, terminalPanel, desktop, logs }: {
     const availableModels = agentProvider === 'ollama' ? ollamaModels : agentProvider === 'hermes' ? hermesModels : openaiModels;
     const model = selectedAgentModel || (agentProvider === 'ollama' ? agentModels[selectedAgent] : '') || availableModels[0];
     if (!desktop || !model || !agentPrompt.trim() || agentRunState === 'running') return;
+    const team = activeAgentTeam;
+    if (hermesMultiAgentToolsConflict) {
+      setAgentRunError('Hermes expose les outils au niveau de toute la plateforme API. Pour lancer plusieurs rôles, désactive ses toolsets API Server; sinon, choisis un agent unique.');
+      setAgentRunState('error');
+      return;
+    }
     if (agentProvider === 'hermes' && hermesEnabledToolsets.length > 0 && !allowHermesTools) {
       setAgentRunError(`Hermes dispose d’outils API actifs (${hermesEnabledToolsets.join(', ')}). Coche « Autoriser les outils Hermes » pour cette demande si tu veux lui permettre de les utiliser.`);
       setAgentRunState('error');
       return;
     }
-    const team = selectedAgentTeam.length ? selectedAgentTeam : [selectedAgent];
     const skills = agentSkillOptions.filter((item) => selectedAgentSkills.includes(item.id));
     const skillInstructions = skills.map((skill) => `## ${skill.name}\n${skill.desc}`).join('\n\n');
     setAgentRunState('running');
     setAgentRunError('');
     setAgentResponse('');
-    setActiveGraphAgent(null);
+    setActiveGraphAgents([]);
     setCompletedGraphAgents([]);
     setFailedGraphAgent(null);
-    let executingRole = team[0];
+    let executingRole = selectedAgent;
+    let failedRole: string | null = null;
     try {
       const command = agentProvider === 'ollama' ? 'run_ollama_agent' : agentProvider === 'hermes' ? 'run_hermes_agent' : 'run_openai_agent';
-      let sharedContext = agentPrompt.trim();
-      const replies: string[] = [];
-      for (const role of team) {
-        executingRole = role;
-        setActiveGraphAgent(role);
-        const result = await invoke<AgentRunResult>(command, {
-          input: {
-            model,
-            role,
-            prompt: sharedContext,
-            skillName: skills.map((skill) => skill.name).join(', ') || null,
-            skillInstructions: skillInstructions || null,
-            enableHermesTools: agentProvider === 'hermes' && allowHermesTools,
-          },
-        });
-        replies.push(`### ${role}\n${result.response}`);
-        setCompletedGraphAgents((current) => [...current, role]);
-        sharedContext = `${sharedContext}\n\nRéponse de ${role} :\n${result.response}`;
+      const runRole = (role: string, prompt: string, coordinator: boolean) => invoke<AgentRunResult>(command, {
+        input: {
+          model,
+          role,
+          prompt,
+          skillName: skills.map((skill) => skill.name).join(', ') || null,
+          skillInstructions: skillInstructions || null,
+          enableHermesTools: agentProvider === 'hermes' && coordinator && allowHermesTools && hermesEnabledToolsets.length > 0,
+        },
+      });
+      const specialists = team.filter((role) => role !== selectedAgent);
+      const contributions: Array<{ role: string; response: string }> = [];
+      for (let offset = 0; offset < specialists.length; offset += 2) {
+        const batch = specialists.slice(offset, offset + 2);
+        setActiveGraphAgents(batch);
+        const results = await Promise.all(batch.map(async (role) => {
+          try {
+            const result = await runRole(role, agentPrompt.trim(), false);
+            return { role, response: result.response };
+          } catch (error) {
+            failedRole = role;
+            throw error;
+          }
+        }));
+        contributions.push(...results);
+        setCompletedGraphAgents((current) => [...current, ...results.map((result) => result.role)]);
       }
-      setAgentResponse(`${replies.join('\n\n')}\n\n— ${agentProvider === 'ollama' ? 'Ollama' : agentProvider === 'hermes' ? 'Hermes' : 'OpenAI'} · ${model} · ${team.length} agent${team.length === 1 ? '' : 's'} · échanges séquentiels`);
-      setActiveGraphAgent(null);
+
+      if (contributions.length) {
+        executingRole = selectedAgent;
+        setActiveGraphAgents([selectedAgent]);
+        const contributionBrief = contributions.map(({ role, response }) => `### Contribution de ${role}\n${response}`).join('\n\n');
+        const synthesisPrompt = `${agentPrompt.trim()}\n\nContributions des agents spécialistes (à examiner et mettre en relation) :\n${contributionBrief}\n\nEn tant qu’agent coordinateur ${selectedAgent}, compare ces contributions, relève les désaccords ou hypothèses non vérifiées, puis fournis une synthèse exploitable avec les prochaines étapes. Ne prétends pas avoir exécuté d’action qui n’a pas été confirmée.`;
+        const synthesis = await runRole(selectedAgent, synthesisPrompt, true);
+        setCompletedGraphAgents((current) => current.includes(selectedAgent) ? current : [...current, selectedAgent]);
+        setAgentResponse(`${contributionBrief}\n\n### Synthèse de ${selectedAgent}\n${synthesis.response}\n\n— ${agentProvider === 'ollama' ? 'Ollama' : agentProvider === 'hermes' ? 'Hermes' : 'OpenAI'} · ${model} · ${contributions.length} spécialiste${contributions.length === 1 ? '' : 's'} en parallèle · 2 requêtes simultanées maximum`);
+      } else {
+        setActiveGraphAgents([selectedAgent]);
+        const result = await runRole(selectedAgent, agentPrompt.trim(), true);
+        setCompletedGraphAgents((current) => current.includes(selectedAgent) ? current : [...current, selectedAgent]);
+        setAgentResponse(`### ${selectedAgent}\n${result.response}\n\n— ${agentProvider === 'ollama' ? 'Ollama' : agentProvider === 'hermes' ? 'Hermes' : 'OpenAI'} · ${model} · agent unique`);
+      }
+      setActiveGraphAgents([]);
       setAgentRunState('idle');
     } catch (error) {
-      setFailedGraphAgent(executingRole);
-      setActiveGraphAgent(null);
+      setFailedGraphAgent(failedRole || executingRole);
+      setActiveGraphAgents([]);
       setAgentRunError(String(error));
       setAgentRunState('error');
     }
@@ -521,7 +553,7 @@ export function ModuleWorkspace({ page, terminalPanel, desktop, logs }: {
         skills={agentSkillOptions}
         selectedAgents={selectedAgentTeam}
         selectedSkills={selectedAgentSkills}
-        activeAgent={activeGraphAgent}
+        activeAgents={activeGraphAgents}
         completedAgents={completedGraphAgents}
         failedAgent={failedGraphAgent}
         engineLabel={agentProvider === 'hermes' ? 'HERMES' : agentProvider === 'ollama' ? 'OLLAMA' : 'OPENAI'}
@@ -534,7 +566,7 @@ export function ModuleWorkspace({ page, terminalPanel, desktop, logs }: {
       <section className="panel module-card hermes-whatsapp-guide"><div className="module-card-heading"><div><h2>WhatsApp pour Hermes</h2><p>La passerelle Hermes reçoit tes messages WhatsApp et les transmet à son agent. NEXUS ne stocke pas la session WhatsApp.</p></div><Globe2 size={19} /></div><ol><li>Dans PowerShell, vérifie d’abord <code>hermes gateway status</code>.</li><li>Lance l’assistant de jumelage <code>hermes whatsapp</code>, puis scanne le QR avec WhatsApp → Appareils connectés → Connecter un appareil.</li><li>Autorise uniquement ton numéro dans la liste des utilisateurs, puis redémarre l’instance existante avec <code>hermes gateway restart</code>.</li><li>Vérifie l’état avec <code>hermes gateway status</code> et envoie un message privé de test.</li></ol><div className="module-info-note"><LockKeyhole size={15} /> La passerelle WhatsApp Hermes peut donner accès à ses outils, y compris au terminal. Garde une liste d’utilisateurs limitée à ton numéro. L’adaptateur Baileys est non officiel et présente un risque de restriction du compte.</div><a href="https://hermes-agent.nousresearch.com/docs/user-guide/messaging/whatsapp" target="_blank" rel="noreferrer">Guide WhatsApp officiel Hermes <ExternalLink size={13} /></a></section>
       <section className="panel module-card"><div className="module-card-heading"><div><h2>Moteur OpenAI</h2><p>La clé se configure dans Configuration et reste chiffrée dans le profil Windows.</p></div><button className="module-primary-button" onClick={() => void loadOpenaiModels()} disabled={!desktop || !openaiKeyConfigured || openaiStatus === 'loading'}><Activity size={15} />{openaiStatus === 'loading' ? 'Vérification…' : openaiKeyConfigured ? 'Vérifier OpenAI' : 'Clé requise'}</button></div>{openaiStatus === 'ready' ? <div className="ollama-model-list">{openaiModels.map((model) => <span className="ollama-model-chip" key={model}>{model}</span>)}</div> : openaiStatus === 'error' ? <div className="module-info-note"><LockKeyhole size={15} /> OpenAI : {openaiError}</div> : <div className="module-info-note"><LockKeyhole size={15} />{openaiKeyConfigured ? 'Vérifie les modèles GPT disponibles pour ce compte API.' : 'Aucune clé enregistrée. Ajoute-la dans Configuration.'}</div>}</section>
       <section className="panel module-card"><div className="module-card-heading"><div><h2>Rôles de l’orchestrateur</h2><p>Choisis plusieurs rôles pour qu’ils se transmettent leurs réponses dans une même mission.</p></div><span className="module-count">{agents.length} rôles</span></div><div className="module-agent-grid">{agents.map(({ name, role, icon: AgentIcon, color }) => <article className="module-agent-card agent-model-card" key={name}><span className={`agent-icon ${color}`}><AgentIcon size={20} /></span><div className="agent-model-copy"><strong>{name}</strong><small>{role}</small><select aria-label={`Modèle Ollama pour ${name}`} value={agentModels[name] || ''} onChange={(event) => assignAgentModel(name, event.target.value)} disabled={ollamaModels.length === 0}><option value="">Aucun modèle associé</option>{ollamaModels.map((model) => <option key={model} value={model}>{model}</option>)}</select></div><span className={ollamaStatus === 'ready' ? 'skill-available' : 'not-connected'}><i /> {ollamaStatus === 'ready' ? 'OLLAMA' : ollamaStatus === 'loading' ? 'TEST…' : 'HORS LIGNE'}</span></article>)}</div></section>
-      <section className="panel module-card"><div className="module-card-heading"><div><h2>Orchestrer une équipe</h2><p>Les agents se transmettent la réponse du précédent. Choisis un ou plusieurs rôles et skills.</p></div><Sparkles size={19} /></div><form className="module-form agent-run-form" onSubmit={(event) => void runSelectedAgent(event)}>
+      <section className="panel module-card"><div className="module-card-heading"><div><h2>Orchestrer une équipe</h2><p>Les spécialistes travaillent par lots de deux; l’agent de départ analyse leurs contributions et rédige la synthèse. Choisis les rôles et skills.</p></div><Sparkles size={19} /></div><form className="module-form agent-run-form" onSubmit={(event) => void runSelectedAgent(event)}>
         {missions.length > 0 && <div className="module-form-row mission-agent-loader"><select aria-label="Mission à charger" value={missionToLoad} onChange={(event) => setMissionToLoad(event.target.value)}><option value="">Charger une mission existante…</option>{missions.map((mission) => <option value={mission.id} key={mission.id}>{mission.title}</option>)}</select><button type="button" className="subtle-button" onClick={loadMissionIntoAgents} disabled={!missionToLoad}>Charger demande et skills</button></div>}
         <label htmlFor="agent-role">Agent de départ</label><select id="agent-role" value={selectedAgent} onChange={(event) => { setSelectedAgent(event.target.value); setSelectedAgentModel(''); setSelectedAgentTeam((current) => current.includes(event.target.value) ? current : [event.target.value, ...current]); }}>{agents.map((agent) => <option key={agent.name} value={agent.name}>{agent.name}</option>)}</select>
         <label>Équipe participante</label><div className="agent-check-grid">{agents.map((agent) => <label key={agent.name}><input type="checkbox" checked={selectedAgentTeam.includes(agent.name)} onChange={() => setSelectedAgentTeam((current) => current.includes(agent.name) ? current.filter((name) => name !== agent.name) : [...current, agent.name])} />{agent.name}</label>)}</div>
@@ -543,10 +575,12 @@ export function ModuleWorkspace({ page, terminalPanel, desktop, logs }: {
         <label>Skills à appliquer</label><div className="agent-check-grid">{agentSkillOptions.map((skill) => <label key={skill.id}><input type="checkbox" checked={selectedAgentSkills.includes(skill.id)} onChange={() => setSelectedAgentSkills((current) => current.includes(skill.id) ? current.filter((id) => id !== skill.id) : [...current, skill.id])} />{skill.name}</label>)}</div>
         <label htmlFor="agent-prompt">Ta demande</label><textarea id="agent-prompt" value={agentPrompt} onChange={(event) => setAgentPrompt(event.target.value)} placeholder="Décris ce que l’équipe doit accomplir…" required />
         {agentProvider === 'openai' && <small className="module-form-hint">Ta demande et les skills choisis seront envoyés à OpenAI et peuvent entraîner une facturation API.</small>}
-        {agentProvider === 'hermes' && hermesEnabledToolsets.length > 0 && <label className="agent-tools-approval"><input type="checkbox" checked={allowHermesTools} onChange={(event) => setAllowHermesTools(event.target.checked)} />Autoriser les toolsets Hermes pour cette demande : {hermesEnabledToolsets.join(', ')}</label>}
-        <button className="module-primary-button" disabled={!desktop || !agentEffectiveModel || agentRunState === 'running' || (agentProvider === 'hermes' && hermesEnabledToolsets.length > 0 && !allowHermesTools)}><Sparkles size={15} />{agentRunState === 'running' ? 'Les agents échangent…' : `Lancer ${Math.max(1, selectedAgentTeam.length)} agent${selectedAgentTeam.length === 1 ? '' : 's'}`}</button>
+        {agentProvider === 'hermes' && hermesEnabledToolsets.length > 0 && (hermesMultiAgentToolsConflict
+          ? <div className="module-info-note"><LockKeyhole size={15} />Les outils Hermes actifs sont disponibles pour chaque appel API. Désactive-les dans Hermes pour lancer une équipe en mode analyse, ou réduis l’équipe à un seul agent.</div>
+          : <label className="agent-tools-approval"><input type="checkbox" checked={allowHermesTools} onChange={(event) => setAllowHermesTools(event.target.checked)} />Autoriser les toolsets Hermes pour cette demande : {hermesEnabledToolsets.join(', ')}</label>)}
+        <button className="module-primary-button" disabled={!desktop || !agentEffectiveModel || agentRunState === 'running' || hermesMultiAgentToolsConflict || (agentProvider === 'hermes' && hermesEnabledToolsets.length > 0 && !allowHermesTools)}><Sparkles size={15} />{agentRunState === 'running' ? 'Les agents échangent…' : `Lancer ${Math.max(1, activeAgentTeam.length)} agent${activeAgentTeam.length === 1 ? '' : 's'}`}</button>
       </form>{agentRunState === 'error' && <div className="module-info-note"><LockKeyhole size={15} /> L’équipe n’a pas pu répondre : {agentRunError}</div>}{agentResponse && <pre className="agent-response">{agentResponse}</pre>}</section>
-      <section className="panel module-card"><div className="module-info-note"><LockKeyhole size={15} /> Hermes est le moteur proposé par défaut. Les rôles du graphe sont pour l’instant des appels séquentiels au même moteur, pas encore des processus Hermes autonomes. Ses outils API sont transmis uniquement après approbation pour la demande; son apprentissage durable et sa mémoire restent gérés par Hermes lui-même.</div></section>
+      <section className="panel module-card"><div className="module-info-note"><LockKeyhole size={15} /> Hermes est le moteur proposé par défaut. Les spécialistes reçoivent la même demande séparément, puis l’agent de départ reçoit leurs rapports pour les comparer et les synthétiser. Cela ne lance pas encore des sous-processus Hermes autonomes. L’API ne sépare pas les outils par rôle : NEXUS bloque donc le multi-agent si un toolset API est actif.</div></section>
     </>}
 
     {page === 'browser' && <div className="module-content-grid">

@@ -8,7 +8,7 @@ use std::{
     fs::{self, OpenOptions},
     io::{Read, Write},
     net::{SocketAddr, TcpStream},
-    sync::atomic::{AtomicU64, Ordering},
+    sync::atomic::{AtomicU64, AtomicUsize, Ordering},
     sync::mpsc,
     sync::Mutex,
     thread,
@@ -20,8 +20,10 @@ const OUTPUT_LIMIT_BYTES: usize = 16 * 1024;
 const EXECUTION_TIMEOUT: Duration = Duration::from_secs(8);
 static NEXT_EVENT_ID: AtomicU64 = AtomicU64::new(1);
 static AUDIT_LOG_LOCK: Mutex<()> = Mutex::new(());
-static OLLAMA_AGENT_BUSY: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
-static OPENAI_AGENT_BUSY: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+static OLLAMA_AGENT_ACTIVE: AtomicUsize = AtomicUsize::new(0);
+static OPENAI_AGENT_ACTIVE: AtomicUsize = AtomicUsize::new(0);
+static HERMES_AGENT_ACTIVE: AtomicUsize = AtomicUsize::new(0);
+const MAX_PARALLEL_AGENT_CALLS: usize = 2;
 const AUDIT_LOG_MAX_BYTES: u64 = 1024 * 1024;
 static LAST_CPU_TICKS: Mutex<Option<(u64, u64, u64)>> = Mutex::new(None);
 
@@ -401,6 +403,25 @@ struct AgentRunResult {
     elapsed_ms: u128,
 }
 
+struct AgentSlotGuard(&'static AtomicUsize);
+
+impl AgentSlotGuard {
+    fn acquire(counter: &'static AtomicUsize, engine: &str) -> Result<Self, String> {
+        let active = counter.fetch_add(1, Ordering::AcqRel);
+        if active >= MAX_PARALLEL_AGENT_CALLS {
+            counter.fetch_sub(1, Ordering::Release);
+            return Err(format!("Deux demandes {engine} fonctionnent déjà en parallèle."));
+        }
+        Ok(Self(counter))
+    }
+}
+
+impl Drop for AgentSlotGuard {
+    fn drop(&mut self) {
+        self.0.fetch_sub(1, Ordering::Release);
+    }
+}
+
 #[derive(Debug, Deserialize)]
 struct OpenAiModelEntry {
     id: String,
@@ -692,19 +713,7 @@ async fn run_openai_agent(
     app: AppHandle,
     input: OllamaAgentInput,
 ) -> Result<AgentRunResult, String> {
-    if OPENAI_AGENT_BUSY
-        .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
-        .is_err()
-    {
-        return Err("Un agent OpenAI est déjà en cours.".to_owned());
-    }
-    struct OpenAiRunGuard;
-    impl Drop for OpenAiRunGuard {
-        fn drop(&mut self) {
-            OPENAI_AGENT_BUSY.store(false, Ordering::Release);
-        }
-    }
-    let _guard = OpenAiRunGuard;
+    let _guard = AgentSlotGuard::acquire(&OPENAI_AGENT_ACTIVE, "OpenAI")?;
     let event_id = next_event_id();
     let metadata = format!("role={}; model={}", input.role, input.model);
     audit(
@@ -905,19 +914,7 @@ async fn run_ollama_agent(
     app: AppHandle,
     input: OllamaAgentInput,
 ) -> Result<AgentRunResult, String> {
-    if OLLAMA_AGENT_BUSY
-        .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
-        .is_err()
-    {
-        return Err("Un agent Ollama est déjà en cours.".to_owned());
-    }
-    struct AgentRunGuard;
-    impl Drop for AgentRunGuard {
-        fn drop(&mut self) {
-            OLLAMA_AGENT_BUSY.store(false, Ordering::Release);
-        }
-    }
-    let _guard = AgentRunGuard;
+    let _guard = AgentSlotGuard::acquire(&OLLAMA_AGENT_ACTIVE, "Ollama")?;
     let event_id = next_event_id();
     let metadata = Some(format!("role={}; model={}", input.role, input.model));
     audit(&app, &event_id, "Ollama Agent", "started", metadata.clone());
@@ -1208,21 +1205,7 @@ async fn run_hermes_agent(
     app: AppHandle,
     input: OllamaAgentInput,
 ) -> Result<AgentRunResult, String> {
-    static HERMES_AGENT_BUSY: std::sync::atomic::AtomicBool =
-        std::sync::atomic::AtomicBool::new(false);
-    if HERMES_AGENT_BUSY
-        .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
-        .is_err()
-    {
-        return Err("Un agent Hermes est déjà en cours.".to_owned());
-    }
-    struct HermesRunGuard;
-    impl Drop for HermesRunGuard {
-        fn drop(&mut self) {
-            HERMES_AGENT_BUSY.store(false, Ordering::Release);
-        }
-    }
-    let _guard = HermesRunGuard;
+    let _guard = AgentSlotGuard::acquire(&HERMES_AGENT_ACTIVE, "Hermes")?;
     let event_id = next_event_id();
     let metadata = Some(format!("role={}; model={}", input.role, input.model));
     audit(&app, &event_id, "Hermes Agent", "started", metadata.clone());
