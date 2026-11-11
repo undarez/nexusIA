@@ -127,6 +127,7 @@ export function ModuleWorkspace({ page, terminalPanel, desktop, logs }: {
   const [agentResponse, setAgentResponse] = useState('');
   const [agentRunState, setAgentRunState] = useState<'idle' | 'running' | 'error'>('idle');
   const [agentRunError, setAgentRunError] = useState('');
+  const [hermesCompatibilityMode, setHermesCompatibilityMode] = useState(false);
   const [activeGraphAgents, setActiveGraphAgents] = useState<string[]>([]);
   const [completedGraphAgents, setCompletedGraphAgents] = useState<string[]>([]);
   const [failedGraphAgent, setFailedGraphAgent] = useState<string | null>(null);
@@ -419,6 +420,7 @@ export function ModuleWorkspace({ page, terminalPanel, desktop, logs }: {
     setAgentRunState('running');
     setAgentRunError('');
     setAgentResponse('');
+    setHermesCompatibilityMode(false);
     setActiveGraphAgents([]);
     setCompletedGraphAgents([]);
     setFailedGraphAgent(null);
@@ -440,7 +442,14 @@ export function ModuleWorkspace({ page, terminalPanel, desktop, logs }: {
           const command = agentProvider === 'ollama' ? 'run_ollama_agent' : 'run_openai_agent';
           return invoke<AgentRunResult>(command, { input });
         }
-        const runId = await invoke<string>('start_hermes_run', { input });
+        let runId: string;
+        try {
+          runId = await invoke<string>('start_hermes_run', { input });
+        } catch (error) {
+          if (!/start_hermes_run.*(?:not allowed|not found)|(?:not allowed|not found).*start_hermes_run/i.test(String(error))) throw error;
+          setHermesCompatibilityMode(true);
+          return invoke<AgentRunResult>('run_hermes_agent', { input });
+        }
         activeHermesRuns.current.add(runId);
         const startedAt = Date.now();
         let stopRequested = false;
@@ -620,8 +629,8 @@ export function ModuleWorkspace({ page, terminalPanel, desktop, logs }: {
         {agentProvider === 'hermes' && hermesEnabledToolsets.length > 0 && (hermesMultiAgentToolsConflict
           ? <div className="module-info-note"><LockKeyhole size={15} />Les outils Hermes actifs sont disponibles pour chaque appel API. Désactive-les dans Hermes pour lancer une équipe en mode analyse, ou réduis l’équipe à un seul agent.</div>
           : <label className="agent-tools-approval"><input type="checkbox" checked={allowHermesTools} onChange={(event) => setAllowHermesTools(event.target.checked)} />Autoriser les toolsets Hermes pour cette demande : {hermesEnabledToolsets.join(', ')}</label>)}
-        <div className="agent-form-actions"><button className="module-primary-button" disabled={!desktop || !agentEffectiveModel || agentRunState === 'running' || hermesMultiAgentToolsConflict || (agentProvider === 'hermes' && hermesEnabledToolsets.length > 0 && !allowHermesTools)}><Sparkles size={15} />{agentRunState === 'running' ? 'Les agents échangent…' : `Lancer ${Math.max(1, activeAgentTeam.length)} agent${activeAgentTeam.length === 1 ? '' : 's'}`}</button>{agentProvider === 'hermes' && agentRunState === 'running' && <button type="button" className="subtle-button" onClick={() => void cancelHermesAgentRun()}>Arrêter la mission</button>}</div>
-      </form>{agentRunState === 'error' && <div className="module-info-note"><LockKeyhole size={15} /> L’équipe n’a pas pu répondre : {agentRunError}</div>}{agentResponse && <pre className="agent-response">{agentResponse}</pre>}</section>
+        <div className="agent-form-actions"><button className="module-primary-button" disabled={!desktop || !agentEffectiveModel || agentRunState === 'running' || hermesMultiAgentToolsConflict || (agentProvider === 'hermes' && hermesEnabledToolsets.length > 0 && !allowHermesTools)}><Sparkles size={15} />{agentRunState === 'running' ? 'Les agents échangent…' : `Lancer ${Math.max(1, activeAgentTeam.length)} agent${activeAgentTeam.length === 1 ? '' : 's'}`}</button>{agentProvider === 'hermes' && agentRunState === 'running' && !hermesCompatibilityMode && <button type="button" className="subtle-button" onClick={() => void cancelHermesAgentRun()}>Arrêter la mission</button>}</div>
+      </form>{hermesCompatibilityMode && <div className="module-info-note"><Activity size={15} /> Backend Tauri ancien détecté : demande traitée par le mode Hermes classique. L’annulation du run natif n’est pas disponible; relance une compilation récente pour la récupérer.</div>}{agentRunState === 'error' && <div className="module-info-note"><LockKeyhole size={15} /> L’équipe n’a pas pu répondre : {agentRunError}</div>}{agentResponse && <pre className="agent-response">{agentResponse}</pre>}</section>
       <section className="panel module-card"><div className="module-info-note"><LockKeyhole size={15} /> Hermes utilise maintenant l’API native des runs : NEXUS suit le statut et peut demander l’annulation. Les spécialistes collaborent toujours par lots de deux avant la synthèse. Les événements SSE et la visibilité des sous-agents natifs restent à connecter. Les toolsets API sont contrôlés au niveau global; NEXUS bloque donc le multi-agent s’ils sont actifs.</div></section>
     </>}
 
