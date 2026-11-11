@@ -1,0 +1,40 @@
+name: NEXUS CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up pnpm and Node.js
+        uses: pnpm/setup@v3
+        with:
+          version: 11.25.0
+          runtime: node@22
+          cache: true
+          install: false
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install JavaScript dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Type-check Next.js
+        run: pnpm exec tsc --noEmit
+
+      - name: Build Next.js static export
+        run: pnpm build
+
+      - name: Check Tauri and Rust
+        run: cargo check --manifest-path src-tauri/Cargo.toml --locked

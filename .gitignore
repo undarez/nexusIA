@@ -1,0 +1,14 @@
+node_modules
+.next
+out
+dist
+target
+.env*
+!.env.example
+*.pfx
+*.p12
+*.key
+certificate/
+relic.conf
+*.tsbuildinfo
+*.pem

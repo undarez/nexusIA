@@ -1,0 +1,4 @@
+[[permission]]
+identifier = "allow-check-local-device"
+description = "Allows one user-requested ICMP check to a manually entered device inside the local 192.168.1.0/24 network."
+commands.allow = ["check_lan_device"]

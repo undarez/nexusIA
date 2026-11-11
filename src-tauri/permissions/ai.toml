@@ -1,0 +1,4 @@
+[[permission]]
+identifier = "allow-list-local-ai-models"
+description = "Allows the main window to read local AI model names and submit text-only requests to Ollama."
+commands.allow = ["list_ollama_models", "list_hermes_models", "hermes_text_only_status", "run_hermes_agent", "run_ollama_agent", "list_openai_models", "run_openai_agent", "save_openai_api_key", "openai_api_key_configured"]

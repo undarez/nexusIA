@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "companion",
+  "description": "Restricted permissions for the NEXUS-01 floating companion window.",
+  "windows": ["nexus-companion"],
+  "permissions": ["core:default", "core:window:allow-close", "core:window:allow-set-position", "core:window:allow-set-size", "core:window:allow-set-always-on-top", "core:webview:allow-create-webview-window", "allow-run-companion-agents", "allow-open-approved-app"]
+}

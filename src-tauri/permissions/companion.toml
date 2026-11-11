@@ -1,0 +1,9 @@
+[[permission]]
+identifier = "allow-run-companion-agents"
+description = "Allows the companion window to send text-only requests to the configured local or OpenAI model."
+commands.allow = ["list_ollama_models", "list_hermes_models", "hermes_text_only_status", "run_hermes_agent", "run_ollama_agent", "list_openai_models", "run_openai_agent", "openai_api_key_configured"]
+
+[[permission]]
+identifier = "allow-open-approved-app"
+description = "Allows the companion to launch a known Windows application only after explicit user approval."
+commands.allow = ["open_approved_app", "record_companion_app_denial"]

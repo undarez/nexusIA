@@ -1,0 +1,4 @@
+[[permission]]
+identifier = "allow-get-system-metrics"
+description = "Allows the dashboard to read local Windows CPU and memory usage."
+commands.allow = ["get_system_metrics"]

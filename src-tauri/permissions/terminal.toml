@@ -1,0 +1,4 @@
+[[permission]]
+identifier = "allow-execute-terminal-action"
+description = "Allows the main window to invoke the fixed, approval-gated terminal actions."
+commands.allow = ["execute_terminal_action", "record_terminal_denial", "record_terminal_text_rejection"]
